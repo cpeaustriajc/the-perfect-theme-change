@@ -33,6 +33,17 @@ function writeCookie(
 	document.cookie = `${name}=${value}; path=${path}; max-age=${maxAge}; samesite=lax`;
 }
 
+/**
+ * Apply `mode` to the `<html>` class list.
+ *
+ * For "system" this must apply the RESOLVED class (the OS scheme's theme),
+ * not strip both classes: the server ladder renders the resolved hint class
+ * even in system mode, so the optimistic swap here must equal the next
+ * server-rendered class. If it doesn't, React's className prop-diffing can
+ * see no change (e.g. explicit "dark" → system-with-dark-OS both render
+ * "dark") and never rewrite the attribute, leaving the real DOM diverged
+ * from React's virtual tree.
+ */
 function applyClass(mode: ThemeMode): void {
 	const root = document.documentElement;
 	if (mode === "light") {
@@ -41,6 +52,16 @@ function applyClass(mode: ThemeMode): void {
 	} else if (mode === "dark") {
 		root.classList.add("dark");
 		root.classList.remove("light");
+	} else if (
+		typeof window !== "undefined" &&
+		typeof window.matchMedia === "function"
+	) {
+		const resolved: Theme = window.matchMedia("(prefers-color-scheme: dark)")
+			.matches
+			? "dark"
+			: "light";
+		root.classList.add(resolved);
+		root.classList.remove(resolved === "dark" ? "light" : "dark");
 	} else {
 		root.classList.remove("light");
 		root.classList.remove("dark");
@@ -51,9 +72,11 @@ function applyClass(mode: ThemeMode): void {
  * Set the user's explicit theme choice.
  *
  * Writes the explicit cookie for `"light"`/`"dark"`, deletes it for
- * `"system"`, and optimistically swaps the class on `<html>`. With
- * `viewTransition: true` the swap is wrapped in `document.startViewTransition`
- * when available and the user has not requested reduced motion.
+ * `"system"`, and optimistically swaps the class on `<html>`. For "system"
+ * the swap applies the resolved OS-scheme class (see `applyClass`) so it
+ * matches the next server render exactly. With `viewTransition: true` the
+ * swap is wrapped in `document.startViewTransition` when available and the
+ * user has not requested reduced motion.
  */
 export function setTheme(
 	mode: ThemeMode,
@@ -89,7 +112,13 @@ export function setTheme(
 		);
 
 	if (canViewTransition) {
-		document.startViewTransition(swap);
+		const transition = document.startViewTransition(swap);
+		// An aborted/skipped transition (DOM churn during capture, a rapid
+		// second transition) rejects `ready`/`finished`; the class swap still
+		// applies, so these rejections must not surface as unhandled errors.
+		transition.ready.catch(() => {});
+		transition.finished.catch(() => {});
+		transition.updateCallbackDone.catch(() => {});
 	} else {
 		swap();
 	}

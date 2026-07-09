@@ -391,10 +391,16 @@ function subscribeToSystemSchemeChange(
 ```
 
 - `setTheme("light" | "dark")` writes the explicit cookie and swaps the
-  `<html>` class; `setTheme("system")` deletes the explicit cookie and clears
-  the class. With `viewTransition: true`, the swap runs inside
-  `document.startViewTransition` when the browser supports it and the user
-  has not requested reduced motion; otherwise it applies directly.
+  `<html>` class; `setTheme("system")` deletes the explicit cookie and swaps
+  the class to the OS scheme resolved via `matchMedia` (not a clear to no
+  class), because that's what the next server render produces from the hint
+  cookie — matching it exactly is what keeps React's className prop-diffing
+  from leaving the real DOM out of sync with its virtual tree. With
+  `viewTransition: true`, the swap runs inside `document.startViewTransition`
+  when the browser supports it and the user has not requested reduced
+  motion; otherwise it applies directly. Aborted/skipped transitions (e.g. a
+  rapid second call) are swallowed so they never surface as unhandled
+  rejections.
 - `subscribeToSystemSchemeChange` attaches a `prefers-color-scheme` listener,
   refreshes the hint cookie on every change (before calling back), and
   returns an unsubscribe function.

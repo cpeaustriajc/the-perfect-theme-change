@@ -26,6 +26,10 @@ describe("theme-client SSR guards (node env, no DOM)", () => {
 		).not.toThrow();
 	});
 
+	it("setTheme does not throw for system mode with viewTransition (SSR no-op guard only — this env has no document.startViewTransition/matchMedia to exercise the resolved-class or abort-catch paths)", () => {
+		expect(() => setTheme("system", { viewTransition: true })).not.toThrow();
+	});
+
 	it("subscribeToSystemSchemeChange returns a callable noop", () => {
 		const unsub = subscribeToSystemSchemeChange(() => {});
 		expect(typeof unsub).toBe("function");
