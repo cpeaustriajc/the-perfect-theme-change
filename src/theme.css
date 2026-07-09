@@ -1,0 +1,100 @@
+/* =========================================================================
+ * the-perfect-theme-change — copy-pastable theme CSS
+ *
+ * The whole module hinges on ONE idea: when the server has no basis to pick a
+ * theme (first visit, "unknown"), it renders NO class on <html>. The CSS must
+ * therefore produce a CORRECT dark first paint from the OS preference alone,
+ * with no class and no JavaScript. Two strategies do this; pick ONE.
+ *
+ * Classes owned by the server / client:
+ *   .light  -> user explicitly chose light  (force light regardless of OS)
+ *   .dark   -> user explicitly chose dark    (force dark  regardless of OS)
+ *   (none)  -> system mode                   (follow the OS preference)
+ * ========================================================================= */
+
+/* -------------------------------------------------------------------------
+ * STRATEGY 1 (RECOMMENDED): light-dark()
+ *
+ * `color-scheme` drives the automatic branch of every `light-dark()` value.
+ * On <html> with no class, `color-scheme: light dark` means the browser picks
+ * per the OS preference — so the classless first paint is correct with zero JS
+ * and zero reload. The explicit classes just pin `color-scheme`.
+ * ------------------------------------------------------------------------- */
+:root {
+	color-scheme: light dark;
+
+	/* Define each token ONCE; light-dark() resolves it against color-scheme. */
+	--background: light-dark(#ffffff, #111111);
+	--foreground: light-dark(#111111, #f5f5f5);
+	--muted: light-dark(#f4f4f5, #27272a);
+	--border: light-dark(#e4e4e7, #3f3f46);
+	--primary: light-dark(#2563eb, #60a5fa);
+}
+
+.light {
+	color-scheme: light;
+}
+
+.dark {
+	color-scheme: dark;
+}
+
+/* Consume the tokens as usual. */
+body {
+	background: var(--background);
+	color: var(--foreground);
+}
+
+/* -------------------------------------------------------------------------
+ * STRATEGY 2 (CLASSIC): explicit .dark block + duplicated media query
+ *
+ * Use this only if you cannot adopt light-dark() (older target browsers). You
+ * must duplicate the dark tokens: once under `.dark` (explicit choice) and
+ * once under `@media (prefers-color-scheme: dark)` scoped to `:root:not(.light)`
+ * so the classless first paint follows the OS but an explicit `.light` still
+ * wins. Uncomment this whole section AND remove the light-dark() tokens above.
+ * ------------------------------------------------------------------------- */
+/*
+:root {
+	--background: #ffffff;
+	--foreground: #111111;
+	--muted: #f4f4f5;
+	--border: #e4e4e7;
+	--primary: #2563eb;
+}
+
+.dark {
+	--background: #111111;
+	--foreground: #f5f5f5;
+	--muted: #27272a;
+	--border: #3f3f46;
+	--primary: #60a5fa;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not(.light) {
+		--background: #111111;
+		--foreground: #f5f5f5;
+		--muted: #27272a;
+		--border: #3f3f46;
+		--primary: #60a5fa;
+	}
+}
+*/
+
+/* -------------------------------------------------------------------------
+ * TAILWIND v4 — dual `dark:` variant
+ *
+ * Makes `dark:` utilities respond to BOTH the explicit `.dark` class AND the
+ * classless OS preference (while still letting `.light` force light). Put this
+ * in the file that has your `@import "tailwindcss";`. Works with either
+ * strategy above.
+ * ------------------------------------------------------------------------- */
+/*
+@custom-variant dark {
+	&:is(.dark *) { @slot; }
+	@media (prefers-color-scheme: dark) {
+		&:is(:root:not(.light) *) { @slot; }
+	}
+}
+*/

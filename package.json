@@ -1,0 +1,19 @@
+{
+	"name": "the-perfect-theme-change",
+	"version": "0.0.0",
+	"description": "Zero-runtime-dependency, vendorable theming module for React SSR apps that fixes dark-mode hydration mismatches at the root cause.",
+	"license": "MIT",
+	"author": "CJ Austria (cpeaustriajc)",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"check": "biome check .",
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.2",
+		"typescript": "^6.0.3",
+		"vitest": "^4.1.10"
+	}
+}
