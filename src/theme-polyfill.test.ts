@@ -59,39 +59,61 @@ describe("polyfillColorSchemeHint", () => {
 
 	it("copies a plain record with mixed-case keys and array values", () => {
 		const out = polyfillColorSchemeHint({
-			Cookie: ["ch-prefers-color-scheme=dark", "theme=light"],
-			"X-Other": "1",
+			Cookie: ["theme=light", "ch-prefers-color-scheme=dark"],
+			"X-Other": ["1", "2"],
 			"X-Missing": undefined,
 		});
 		expect(out.get(HEADER)).toBe("dark");
-		// Arrays keep only their first value, as readTheme always did.
-		expect(out.get("cookie")).toBe("ch-prefers-color-scheme=dark");
-		expect(out.get("x-other")).toBe("1");
+		expect(out.get("cookie")).toBe("theme=light; ch-prefers-color-scheme=dark");
+		expect(out.get("x-other")).toBe("1, 2");
 		expect(out.has("x-missing")).toBe(false);
 	});
 
-	it("keeps the first of two keys that differ only in case", () => {
+	it("combines keys that differ only in case into one header", () => {
+		const out = polyfillColorSchemeHint({
+			cookie: "theme=light",
+			COOKIE: "ch-prefers-color-scheme=dark",
+			"X-Other": "1",
+			"x-other": "2",
+		});
+		expect(out.get("cookie")).toBe("theme=light; ch-prefers-color-scheme=dark");
+		expect(out.get("x-other")).toBe("1, 2");
+		expect(out.get(HEADER)).toBe("dark");
+	});
+
+	it("treats a header sent twice as invalid and falls back to the cookie", () => {
 		const out = polyfillColorSchemeHint({
 			"Sec-CH-Prefers-Color-Scheme": "light",
 			[HEADER]: "dark",
-		});
-		expect(out.get(HEADER)).toBe("light");
-	});
-
-	it("lets a first key with an undefined value hide a later one", () => {
-		const out = polyfillColorSchemeHint({
-			"Sec-CH-Prefers-Color-Scheme": undefined,
-			[HEADER]: "dark",
-		});
-		expect(out.has(HEADER)).toBe(false);
-	});
-
-	it("drops a header name that Headers rejects", () => {
-		const out = polyfillColorSchemeHint({
-			"bad name": "x",
 			cookie: "ch-prefers-color-scheme=dark",
 		});
 		expect(out.get(HEADER)).toBe("dark");
+	});
+
+	it("trims optional whitespace around a native header value", () => {
+		const out = polyfillColorSchemeHint({
+			[HEADER]: " dark ",
+			cookie: "ch-prefers-color-scheme=light",
+		});
+		expect(out.get(HEADER)).toBe("dark");
+	});
+
+	it("skips HTTP/2 pseudo-headers", () => {
+		const out = polyfillColorSchemeHint({
+			":method": "GET",
+			":path": "/",
+			":authority": "example.test",
+			":scheme": "https",
+			cookie: "ch-prefers-color-scheme=dark",
+		});
+		expect(out.get(HEADER)).toBe("dark");
+		expect([...out.keys()]).toEqual(["cookie", HEADER]);
+	});
+
+	it("throws a TypeError for a header name that is not a valid token", () => {
+		expect(() => polyfillColorSchemeHint({ "bad name": "x" })).toThrow(
+			TypeError,
+		);
 	});
 
 	it("reads a custom hint cookie name", () => {
@@ -103,8 +125,6 @@ describe("polyfillColorSchemeHint", () => {
 	});
 
 	it("returns Headers that accept a sec- name in this runtime", () => {
-		// Fetch forbids `Sec-` request headers only for request-guarded Headers;
-		// a bare `new Headers()` has no guard. Prove it, don't assume it.
 		const bare = new Headers();
 		bare.set(HEADER, "dark");
 		expect(bare.get(HEADER)).toBe("dark");
