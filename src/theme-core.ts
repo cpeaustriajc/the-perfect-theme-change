@@ -28,6 +28,9 @@ export interface ThemeCookieNames {
 	hint: string;
 }
 
+/** A Node-style headers record, such as `IncomingHttpHeaders`. */
+export type PlainHeaders = Record<string, string | string[] | undefined>;
+
 export const DEFAULT_COOKIE_NAMES: ThemeCookieNames = {
 	explicit: "theme",
 	hint: "ch-prefers-color-scheme",
