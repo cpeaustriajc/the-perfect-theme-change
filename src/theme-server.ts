@@ -9,6 +9,7 @@
 import {
 	DEFAULT_COOKIE_NAMES,
 	isTheme,
+	type PlainHeaders,
 	parseCookieHeader,
 	type ResolvedServerTheme,
 	resolveTheme,
@@ -16,11 +17,12 @@ import {
 	type ThemeCookieNames,
 	type ThemeMode,
 } from "./theme-core.js";
+import { polyfillColorSchemeHint } from "./theme-polyfill.js";
 
 export interface ThemeInfo {
 	/** Explicit user choice, or `null` when in system mode. */
 	explicit: Theme | null;
-	/** The OS preference known to the server (native header or cookie), or `null`. */
+	/** The OS preference from the (polyfilled) header, or `null`. */
 	hint: Theme | null;
 	/** `"light"` / `"dark"` when explicit is set, otherwise `"system"`. */
 	mode: ThemeMode;
@@ -28,37 +30,13 @@ export interface ThemeInfo {
 	resolved: ResolvedServerTheme;
 }
 
-type PlainHeaders = Record<string, string | string[] | undefined>;
-
-/** Case-insensitive single-value lookup across `Headers` or a plain record. */
-function getHeader(
-	headers: Headers | PlainHeaders | null | undefined,
-	name: string,
-): string | null {
-	if (!headers) return null;
-
-	if (typeof (headers as Headers).get === "function") {
-		return (headers as Headers).get(name);
-	}
-
-	const record = headers as PlainHeaders;
-	const lower = name.toLowerCase();
-	for (const key of Object.keys(record)) {
-		if (key.toLowerCase() === lower) {
-			const value = record[key];
-			if (Array.isArray(value)) return value[0] ?? null;
-			return value ?? null;
-		}
-	}
-	return null;
-}
-
 /**
  * Resolve the theme for a request.
  *
- * Reads the `cookie` header (explicit + hint cookies) and the native
- * `sec-ch-prefers-color-scheme` header, then applies the ladder: explicit
- * cookie beats the native header, which beats the cookie hint.
+ * Runs `polyfillColorSchemeHint` first, so the `sec-ch-prefers-color-scheme`
+ * header holds the OS preference in every browser. Then it reads only the
+ * explicit cookie and that header, and applies the ladder: explicit cookie
+ * beats the header.
  */
 export function readTheme(
 	headers: Headers | PlainHeaders | null | undefined,
@@ -69,23 +47,19 @@ export function readTheme(
 		...opts?.cookieNames,
 	};
 
-	const cookies = parseCookieHeader(getHeader(headers, "cookie"));
-	const explicitRaw = cookies[names.explicit];
-	const cookieHintRaw = cookies[names.hint];
-	const nativeRaw = getHeader(headers, "sec-ch-prefers-color-scheme");
+	const polyfilled = polyfillColorSchemeHint(headers, opts);
+	const explicitRaw = parseCookieHeader(polyfilled.get("cookie"))[
+		names.explicit
+	];
+	const hintRaw = polyfilled.get("sec-ch-prefers-color-scheme");
 
 	const { mode, resolved } = resolveTheme({
 		explicit: explicitRaw,
-		nativeHint: nativeRaw,
-		cookieHint: cookieHintRaw,
+		hint: hintRaw,
 	});
 
 	const explicit = isTheme(explicitRaw) ? explicitRaw : null;
-	const hint = isTheme(nativeRaw)
-		? nativeRaw
-		: isTheme(cookieHintRaw)
-			? cookieHintRaw
-			: null;
+	const hint = isTheme(hintRaw) ? hintRaw : null;
 
 	return { explicit, hint, mode, resolved };
 }

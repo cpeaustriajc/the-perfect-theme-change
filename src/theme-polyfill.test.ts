@@ -78,6 +78,22 @@ describe("polyfillColorSchemeHint", () => {
 		expect(out.get(HEADER)).toBe("light");
 	});
 
+	it("lets a first key with an undefined value hide a later one", () => {
+		const out = polyfillColorSchemeHint({
+			"Sec-CH-Prefers-Color-Scheme": undefined,
+			[HEADER]: "dark",
+		});
+		expect(out.has(HEADER)).toBe(false);
+	});
+
+	it("drops a header name that Headers rejects", () => {
+		const out = polyfillColorSchemeHint({
+			"bad name": "x",
+			cookie: "ch-prefers-color-scheme=dark",
+		});
+		expect(out.get(HEADER)).toBe("dark");
+	});
+
 	it("reads a custom hint cookie name", () => {
 		const out = polyfillColorSchemeHint(
 			{ cookie: "scheme=light; ch-prefers-color-scheme=dark" },

@@ -39,11 +39,16 @@ function toHeaders(
 	}
 
 	const out = new Headers();
+	const seen = new Set<string>();
 	for (const [key, raw] of Object.entries(headers as PlainHeaders)) {
 		// Arrays keep their first value, and the first of two keys that differ
-		// only in case wins — the same lookup `readTheme` has always used.
+		// only in case wins, even when its value is undefined — the same lookup
+		// `readTheme` has always used.
+		const lower = key.toLowerCase();
+		if (seen.has(lower)) continue;
+		seen.add(lower);
 		const value = Array.isArray(raw) ? raw[0] : raw;
-		if (value === undefined || out.has(key)) continue;
+		if (value === undefined) continue;
 		try {
 			out.set(key, value);
 		} catch {

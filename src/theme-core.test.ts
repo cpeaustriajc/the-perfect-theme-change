@@ -65,70 +65,46 @@ describe("isTheme", () => {
 });
 
 describe("resolveTheme ladder", () => {
-	it("explicit beats native and cookie hint", () => {
-		expect(
-			resolveTheme({
-				explicit: "light",
-				nativeHint: "dark",
-				cookieHint: "dark",
-			}),
-		).toEqual({ mode: "light", resolved: "light" });
+	it("explicit beats the header hint", () => {
+		expect(resolveTheme({ explicit: "light", hint: "dark" })).toEqual({
+			mode: "light",
+			resolved: "light",
+		});
 	});
 
-	it("native hint beats cookie hint when explicit absent", () => {
-		expect(
-			resolveTheme({
-				explicit: null,
-				nativeHint: "dark",
-				cookieHint: "light",
-			}),
-		).toEqual({ mode: "system", resolved: "dark" });
+	it("header hint used when explicit absent", () => {
+		expect(resolveTheme({ explicit: undefined, hint: "dark" })).toEqual({
+			mode: "system",
+			resolved: "dark",
+		});
 	});
 
-	it("cookie hint used when explicit + native absent", () => {
-		expect(
-			resolveTheme({
-				explicit: undefined,
-				nativeHint: undefined,
-				cookieHint: "dark",
-			}),
-		).toEqual({ mode: "system", resolved: "dark" });
+	it("invalid explicit falls through to the hint", () => {
+		expect(resolveTheme({ explicit: "purple", hint: "dark" })).toEqual({
+			mode: "system",
+			resolved: "dark",
+		});
 	});
 
-	it("invalid explicit falls through to hints", () => {
-		expect(
-			resolveTheme({
-				explicit: "purple",
-				nativeHint: "dark",
-				cookieHint: null,
-			}),
-		).toEqual({ mode: "system", resolved: "dark" });
-	});
-
-	it("invalid native falls through to cookie hint", () => {
-		expect(
-			resolveTheme({
-				explicit: null,
-				nativeHint: "no-preference",
-				cookieHint: "light",
-			}),
-		).toEqual({ mode: "system", resolved: "light" });
+	it("invalid hint falls through to unknown", () => {
+		expect(resolveTheme({ explicit: null, hint: "no-preference" })).toEqual({
+			mode: "system",
+			resolved: "unknown",
+		});
 	});
 
 	it("all absent -> unknown / system", () => {
-		expect(
-			resolveTheme({ explicit: null, nativeHint: null, cookieHint: null }),
-		).toEqual({ mode: "system", resolved: "unknown" });
+		expect(resolveTheme({ explicit: null, hint: null })).toEqual({
+			mode: "system",
+			resolved: "unknown",
+		});
 	});
 
 	it("all invalid -> unknown / system", () => {
-		expect(
-			resolveTheme({
-				explicit: "x",
-				nativeHint: "y",
-				cookieHint: "z",
-			}),
-		).toEqual({ mode: "system", resolved: "unknown" });
+		expect(resolveTheme({ explicit: "x", hint: "y" })).toEqual({
+			mode: "system",
+			resolved: "unknown",
+		});
 	});
 });
 

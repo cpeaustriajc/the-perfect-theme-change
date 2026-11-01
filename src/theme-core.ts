@@ -83,31 +83,27 @@ export function isTheme(v: unknown): v is Theme {
  * Resolve the theme from the server-side inputs, applying the ladder:
  *
  *   explicit user-choice cookie
- *     > native Sec-CH-Prefers-Color-Scheme header
- *     > client-hint cookie
+ *     > Sec-CH-Prefers-Color-Scheme header
  *     > "unknown"
  *
+ * `hint` is the `Sec-CH-Prefers-Color-Scheme` header value: the one source for
+ * the OS preference.
+ *
  * Any value that is not a valid `Theme` is treated as absent, so a corrupt
- * cookie simply falls through to the next rung.
+ * value simply falls through to the next rung.
  */
 export function resolveTheme(input: {
 	explicit: string | null | undefined;
-	nativeHint: string | null | undefined;
-	cookieHint: string | null | undefined;
+	hint: string | null | undefined;
 }): { mode: ThemeMode; resolved: ResolvedServerTheme } {
 	const explicit = isTheme(input.explicit) ? input.explicit : null;
 	if (explicit) {
 		return { mode: explicit, resolved: explicit };
 	}
 
-	const nativeHint = isTheme(input.nativeHint) ? input.nativeHint : null;
-	if (nativeHint) {
-		return { mode: "system", resolved: nativeHint };
-	}
-
-	const cookieHint = isTheme(input.cookieHint) ? input.cookieHint : null;
-	if (cookieHint) {
-		return { mode: "system", resolved: cookieHint };
+	const hint = isTheme(input.hint) ? input.hint : null;
+	if (hint) {
+		return { mode: "system", resolved: hint };
 	}
 
 	return { mode: "system", resolved: "unknown" };
