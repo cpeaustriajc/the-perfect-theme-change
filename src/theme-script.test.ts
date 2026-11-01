@@ -48,9 +48,7 @@ describe("getClientHintCheckScript", () => {
 	it("JSON-escapes options so a quote in the name cannot break the script", () => {
 		const evil = 'evil";document.title="pwned';
 		const script = getClientHintCheckScript({ hintCookieName: evil });
-		// The value is embedded as a single JSON string literal, escaped.
 		expect(script).toContain(JSON.stringify(evil));
-		// And the script is still syntactically valid (see below).
 		expect(() => new Function(script)).not.toThrow();
 	});
 

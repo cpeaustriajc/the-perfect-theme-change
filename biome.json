@@ -30,6 +30,16 @@
 	},
 	"overrides": [
 		{
+			"includes": ["scripts/find-comments.test.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noTemplateCurlyInString": "off"
+					}
+				}
+			}
+		},
+		{
 			"includes": ["src/theme-client.ts"],
 			"linter": {
 				"rules": {
