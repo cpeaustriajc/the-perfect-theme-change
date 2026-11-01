@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { setTheme, subscribeToSystemSchemeChange } from "./theme-client.js";
 
-// Runs in the vitest "node" environment: there is no `document`/`window`, so
-// these assert the SSR guards make every export a safe no-op.
-
 describe("theme-client SSR guards (node env, no DOM)", () => {
 	it("document is undefined in this environment", () => {
 		expect(typeof document).toBe("undefined");
@@ -26,7 +23,7 @@ describe("theme-client SSR guards (node env, no DOM)", () => {
 		).not.toThrow();
 	});
 
-	it("setTheme does not throw for system mode with viewTransition (SSR no-op guard only — this env has no document.startViewTransition/matchMedia to exercise the resolved-class or abort-catch paths)", () => {
+	it("setTheme does not throw for system mode with viewTransition", () => {
 		expect(() => setTheme("system", { viewTransition: true })).not.toThrow();
 	});
 

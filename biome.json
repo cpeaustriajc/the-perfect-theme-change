@@ -22,5 +22,17 @@
 		"rules": {
 			"preset": "recommended"
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["src/theme-client.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noDocumentCookie": "off"
+					}
+				}
+			}
+		}
+	]
 }
