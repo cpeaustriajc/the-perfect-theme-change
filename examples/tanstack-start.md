@@ -35,7 +35,8 @@ export const Route = createRootRoute({
 	loader: () => getThemeInfo(),
 	head: () => ({
 		scripts: [
-			// Runs before paint, maintains the hint cookie, never touches the DOM.
+			// Client half of the Sec-CH-Prefers-Color-Scheme polyfill: runs before
+			// paint, maintains the hint cookie, never touches the DOM.
 			{ children: getClientHintCheckScript() },
 		],
 	}),
@@ -68,7 +69,9 @@ function RootDocument() {
 ## Optional native fast path
 
 Return `acceptCHHeaders()` from your server (document response headers) so
-Chromium delivers `Sec-CH-Prefers-Color-Scheme` on the first request.
+Chromium delivers `Sec-CH-Prefers-Color-Scheme` on the first request. In
+other browsers, `readTheme` fills that header from the hint cookie, so the
+server code is the same either way.
 
 ## Theme switcher
 

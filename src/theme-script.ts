@@ -1,6 +1,14 @@
 /**
- * theme-script — generates the tiny inline `<head>` script that captures the
- * OS colour-scheme preference into a client-hint cookie.
+ * theme-script — client half of the `Sec-CH-Prefers-Color-Scheme` polyfill.
+ *
+ * Generates the tiny inline `<head>` script that captures the OS colour-scheme
+ * preference into the hint cookie. A page cannot send the `Sec-` header itself
+ * (Fetch forbids that prefix), so on the server `polyfillColorSchemeHint`
+ * (theme-polyfill.ts) copies this cookie into the header. Chromium sends the
+ * header natively, and a valid native header wins over the cookie.
+ *
+ * When WebKit and Gecko ship the native hint, delete this file together with
+ * theme-polyfill.ts.
  *
  * THE HYDRATION-SAFETY INVARIANT: the generated script NEVER touches the DOM.
  * It only reads `matchMedia` and reads/writes `document.cookie`. Because it
