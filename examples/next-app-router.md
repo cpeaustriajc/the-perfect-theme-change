@@ -29,6 +29,7 @@ export default async function RootLayout({
 	children: React.ReactNode;
 }) {
 	// Build a plain record readTheme understands from Next's async stores.
+	// readTheme fills a missing header from the hint cookie (the polyfill).
 	const cookieHeader = (await cookies()).toString();
 	const nativeHint =
 		(await headers()).get("sec-ch-prefers-color-scheme") ?? undefined;
@@ -41,7 +42,8 @@ export default async function RootLayout({
 		<html className={resolved === "unknown" ? undefined : resolved}>
 			<head>
 				<script
-					// Never touches the DOM; only maintains the hint cookie.
+					// Client half of the Sec-CH-Prefers-Color-Scheme polyfill: never
+					// touches the DOM; only maintains the hint cookie.
 					dangerouslySetInnerHTML={{ __html: getClientHintCheckScript() }}
 				/>
 			</head>

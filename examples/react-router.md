@@ -40,6 +40,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 			<head>
 				<Meta />
 				<Links />
+				{/* Client half of the Sec-CH-Prefers-Color-Scheme polyfill. */}
 				<script
 					dangerouslySetInnerHTML={{ __html: getClientHintCheckScript() }}
 				/>

@@ -76,7 +76,7 @@ eliminate Epic Stack's first-visit reload.
 | Client-hint cookies with reload (`@epic-web/client-hints`, Epic Stack ADR 005) | Yes, after the reload | None | Yes | No — reads the cookie on every request | Yes, once, on first visit | Correct and honest, but that first visitor pays for a full reload before seeing the app. |
 | Pure CSS (`prefers-color-scheme` media query, `light-dark()`) | Yes | None | No — server/JS never see the OS preference | Yes | No | Only the paint is solved. Any JS-driven theming (canvas/charts, editors, theme-specific images) has no signal to key off, and explicit overrides need a cookie/script anyway. |
 | Native `Sec-CH-Prefers-Color-Scheme` client hint | Yes, on supporting browsers | None | Yes, on supporting browsers | No — must vary the response on the hint header | Browser-level pre-paint retry, Chromium only; no fallback elsewhere | Not yet universal (see §4) — needs a fallback for Safari/Firefox. |
-| **This module** | Yes | None | Yes, once an explicit or hinted cookie exists; `"unknown"` only on a cookie-less first visit | No for explicit/hinted requests | None by default (`firstVisit: "css"`); opt-in one-time reload (`firstVisit: "reload"`) with a loop guard | Synthesizes the ladder below so every gap in the rows above is covered by the next rung down. |
+| **This module** | Yes | None | Yes, once an explicit cookie or the hint header exists; `"unknown"` only on a cookie-less first visit | No for explicit/hinted requests | None by default (`firstVisit: "css"`); opt-in one-time reload (`firstVisit: "reload"`) with a loop guard | Polyfills `Sec-CH-Prefers-Color-Scheme` from a hint cookie where the browser does not send it, so the server reads one source for the OS preference: the header. |
 
 ## 4. Platform proposal tracker
 
@@ -90,6 +90,11 @@ pre-paint-blocking with `Critical-CH` — the browser retries the very first
 request, hint attached, before it paints anything. If every engine shipped
 this, the entire client-hint-cookie / reload dance in this module would be
 unnecessary.
+
+**Migration when WebKit and Gecko ship the native hint:** delete
+`src/theme-polyfill.ts` and `src/theme-script.ts`, and remove the
+`polyfillColorSchemeHint` call from `readTheme`. `theme-core.ts` does not
+change, because it already reads only the header.
 
 | Engine | Status |
 | --- | --- |
@@ -114,20 +119,38 @@ recommended CSS strategy (§5, §7) leans on it for the classless first paint.
 via `readTheme` in `src/theme-server.ts`):
 
 ```
-explicit user cookie  >  native Sec-CH-Prefers-Color-Scheme header  >  client-hint cookie  >  "unknown"
+explicit user cookie  >  Sec-CH-Prefers-Color-Scheme header  >  "unknown"
 ```
+
+The header is the one source for the OS preference. Chromium sends it
+natively. For WebKit and Gecko, this module polyfills it in two halves:
+
+- **Client half** (`getClientHintCheckScript` in `src/theme-script.ts`): the
+  inline script mirrors `matchMedia("(prefers-color-scheme: dark)")` into the
+  `ch-prefers-color-scheme` hint cookie.
+- **Server half** (`polyfillColorSchemeHint` in `src/theme-polyfill.ts`):
+  `readTheme` first copies the request headers into a fresh `Headers` and,
+  when `sec-ch-prefers-color-scheme` is missing or not `light`/`dark`, sets it
+  from the hint cookie. A valid native header always wins, because the cookie
+  can be stale during a session.
+
+A page cannot simply send the header itself: `Sec-` is a forbidden
+request-header prefix in the Fetch standard, so no page script or service
+worker can set it. Only the server can add it, to its own copy of the
+headers — a bare `new Headers()` has no forbidden-name guard
+(`theme-polyfill.test.ts` proves this for the runtime it runs on).
 
 - **Explicit choice** (`theme` cookie is `"light"` or `"dark"`): the server
   and React both render `class="light"` or `class="dark"` on `<html>`. All
   three trees in §1's equality agree — zero warnings, zero suppression.
-- **System mode, resolved** (native header or hint cookie says `"light"`/`"dark"`,
+- **System mode, resolved** (the header, native or polyfilled, says `"light"`/`"dark"`,
   no explicit cookie): server and React still render that class. Still zero
   warnings — the server just learned the preference from a hint instead of a
   choice.
 - **System mode, unresolved** (`resolved === "unknown"`, i.e. genuinely first
   visit — no cookies, no native header): **no class is ever rendered.** CSS
-  alone (`light-dark()` tokens plus the dual Tailwind `dark:` variant in
-  `theme.css`) resolves the paint from the OS preference, live, with no class
+  alone (`light-dark()` tokens in `theme.css`, plus the dual Tailwind `dark:`
+  variant in `theme-tailwind.css`) resolves the paint from the OS preference, live, with no class
   and no JS. There is nothing for React to disagree with because neither side
   claimed a class.
 - **Closing the gap, silently:** on that same first visit, the inline script
@@ -158,7 +181,9 @@ explicit user cookie  >  native Sec-CH-Prefers-Color-Scheme header  >  client-hi
 - **Native fast path:** `acceptCHHeaders()` returns the `Accept-CH` /
   `Critical-CH` / `Vary` headers that opt Chromium into sending
   `Sec-CH-Prefers-Color-Scheme` on the first request, skipping the client-hint
-  cookie round-trip entirely on browsers that support it (§4).
+  cookie round-trip entirely on browsers that support it (§4). `Vary` names
+  both the hint header and `Cookie`, because `readTheme` reads both. A cache
+  that honours `Vary` then never serves one visitor's theme to another.
 
 ## 6. What this improves over existing packages
 
@@ -188,7 +213,9 @@ explicit user cookie  >  native Sec-CH-Prefers-Color-Scheme header  >  client-hi
 **Honest trade-offs, stated plainly:**
 
 - Once a theme is explicit or hinted, the response depends on request
-  headers/cookies — that route is no longer static, cacheable HTML. This is
+  headers/cookies — that route is no longer static, cacheable HTML
+  (`Vary: Sec-CH-Prefers-Color-Scheme, Cookie` keys any shared cache per
+  visitor). This is
   the same trade-off Epic Stack makes and the same one `next-themes`-style
   static rendering explicitly avoids by suppressing instead.
 - In `css` mode, the one class-less first paint is CSS-only truth: any
@@ -196,10 +223,10 @@ explicit user cookie  >  native Sec-CH-Prefers-Color-Scheme header  >  client-hi
   library, a code editor) has no class or cookie to read yet and must fall
   back to its own `matchMedia` check post-mount.
 - `light-dark()` is colors-only and strictly two-scheme (light/dark) — it
-  can't express a third theme or non-color tokens. `theme.css` includes the
-  classic `.dark` class + duplicated `@media` block as Strategy 2 for apps
-  that need more than what `light-dark()` can express, or that must support
-  browsers predating it.
+  can't express a third theme or non-color tokens. `theme-classic.css` is
+  the classic `.dark` class + duplicated `@media` block, for apps that need
+  more than what `light-dark()` can express, or that must support browsers
+  predating it.
 
 ## 7. Usage
 
@@ -207,9 +234,10 @@ explicit user cookie  >  native Sec-CH-Prefers-Color-Scheme header  >  client-hi
 
 This is not published to a registry — there is nothing to `npm install`. Copy
 the files you need out of `src/` into your app (a `shadcn/ui`-style workflow):
-at minimum `theme-core.ts`, plus whichever of `theme-server.ts`,
-`theme-script.ts`, and `theme-client.ts` your framework calls for, plus
-`theme.css`. Update the relative `./theme-core.js` import inside the files you
+at minimum `theme-core.ts`, plus whichever of `theme-server.ts` (which needs
+`theme-polyfill.ts`), `theme-script.ts`, and `theme-client.ts` your framework
+calls for, plus one of `theme.css` or `theme-classic.css` (and
+`theme-tailwind.css` if you use Tailwind v4). Update the relative `./theme-core.js` import inside the files you
 copy to match wherever you put them. The code samples below and in
 `examples/*.md` write imports as `the-perfect-theme-change/theme-server` etc.
 for readability — treat that as a placeholder for your actual path (a
@@ -294,6 +322,8 @@ interface ThemeCookieNames {
 	hint: string; // default "ch-prefers-color-scheme"
 }
 
+type PlainHeaders = Record<string, string | string[] | undefined>;
+
 const DEFAULT_COOKIE_NAMES: ThemeCookieNames;
 
 function parseCookieHeader(
@@ -303,9 +333,8 @@ function parseCookieHeader(
 function isTheme(v: unknown): v is Theme;
 
 function resolveTheme(input: {
-	explicit: string | null | undefined;
-	nativeHint: string | null | undefined;
-	cookieHint: string | null | undefined;
+	explicit: string | null | undefined; // the explicit cookie
+	hint: string | null | undefined; // the Sec-CH-Prefers-Color-Scheme header
 }): { mode: ThemeMode; resolved: ResolvedServerTheme };
 ```
 
@@ -315,6 +344,8 @@ function resolveTheme(input: {
   raw value if decoding throws).
 - `resolveTheme` applies the ladder from §5: an invalid value at any rung
   (e.g. `"purple"`) is treated as absent and falls through to the next rung.
+  It knows nothing about the hint cookie; `polyfillColorSchemeHint` puts that
+  value into the header before `resolveTheme` runs.
 
 #### `theme-server.ts` — read the resolved theme from a request
 
@@ -327,7 +358,7 @@ interface ThemeInfo {
 }
 
 function readTheme(
-	headers: Headers | Record<string, string | string[] | undefined> | null | undefined,
+	headers: Headers | PlainHeaders | null | undefined,
 	opts?: { cookieNames?: Partial<ThemeCookieNames> },
 ): ThemeInfo;
 
@@ -339,13 +370,40 @@ function acceptCHHeaders(): {
 ```
 
 - `readTheme` accepts either a WHATWG `Headers` instance or a plain
-  Node-style headers record (header-name lookup is case-insensitive; an
-  array header value uses the first entry). It reads the `cookie` header
-  (both cookie names) and the `sec-ch-prefers-color-scheme` header.
+  Node-style headers record, including Node HTTP/2 `req.headers` (see
+  `polyfillColorSchemeHint` for how a record is read). It runs
+  `polyfillColorSchemeHint` first, then reads only the explicit cookie and the
+  `sec-ch-prefers-color-scheme` header. Existing callers do not need to wire
+  the polyfill in themselves.
 - `acceptCHHeaders()` always returns
-  `{ "Accept-CH": "Sec-CH-Prefers-Color-Scheme", "Critical-CH": "Sec-CH-Prefers-Color-Scheme", Vary: "Sec-CH-Prefers-Color-Scheme" }`.
+  `{ "Accept-CH": "Sec-CH-Prefers-Color-Scheme", "Critical-CH": "Sec-CH-Prefers-Color-Scheme", Vary: "Sec-CH-Prefers-Color-Scheme, Cookie" }`.
 
-#### `theme-script.ts` — the inline `<head>` script
+#### `theme-polyfill.ts` — server half of the client-hint polyfill
+
+```ts
+function polyfillColorSchemeHint(
+	headers: Headers | PlainHeaders | null | undefined,
+	opts?: { cookieNames?: Partial<ThemeCookieNames> },
+): Headers;
+```
+
+- Returns a new `Headers`; it never mutates its input. A plain record is
+  copied with HTTP semantics: names are case-insensitive; repeated `cookie`
+  values (an array, or keys that differ only in case) are joined with `"; "`
+  (RFC 9113 §8.2.3); other repeated fields are joined with `", "`; optional
+  whitespace around a value is trimmed. HTTP/2 pseudo-headers (`:path`,
+  `:method`, …) are skipped, because they are not HTTP fields. Any other name
+  or value that `Headers` rejects throws a `TypeError` to the caller.
+- A header sent twice (`"light, dark"`) is not a valid hint, so the cookie
+  fills it.
+- Sets `sec-ch-prefers-color-scheme` from the hint cookie (default
+  `ch-prefers-color-scheme`, overridable via `cookieNames.hint`) only when the
+  header is missing or is not `light`/`dark`, and only when the cookie is
+  valid. A valid native header always wins.
+- It is the only server code that knows about the hint cookie. Delete it,
+  with `theme-script.ts`, when WebKit and Gecko ship the native hint.
+
+#### `theme-script.ts` — the inline `<head>` script (client half of the polyfill)
 
 ```ts
 interface ClientHintCheckOptions {
@@ -398,32 +456,55 @@ function subscribeToSystemSchemeChange(
   from leaving the real DOM out of sync with its virtual tree. With
   `viewTransition: true`, the swap runs inside `document.startViewTransition`
   when the browser supports it and the user has not requested reduced
-  motion; otherwise it applies directly. Aborted/skipped transitions (e.g. a
-  rapid second call) are swallowed so they never surface as unhandled
-  rejections.
+  motion; otherwise it applies directly. When a rapid second call skips the
+  first transition, the browser rejects that transition's `ready` with an
+  `AbortError`; `setTheme` ignores that one reason, because the class swap
+  still runs. Any other rejection reaches the page's global
+  `unhandledrejection` handler with its cause.
+- The cookie is written with a synchronous `document.cookie` assignment, so
+  it is in place before the caller's next request. The Cookie Store API is
+  asynchronous and does not exist in insecure (`http:`) contexts, so it cannot
+  give that guarantee. `biome.json` turns `noDocumentCookie` off for
+  `theme-client.ts` for this reason.
 - `subscribeToSystemSchemeChange` attaches a `prefers-color-scheme` listener,
   refreshes the hint cookie on every change (before calling back), and
   returns an unsubscribe function.
 - Both functions guard on `typeof document`/`window === "undefined"` and are
   safe no-ops when imported or called during SSR.
 
-#### `theme.css`
+#### `theme.css`, `theme-classic.css`, `theme-tailwind.css`
 
-Copy-paste CSS with two mutually exclusive strategies (pick one) plus an
-optional Tailwind v4 snippet:
+Copy-paste CSS. Pick one of the first two files; add the third for Tailwind v4:
 
-- **Strategy 1 (recommended): `light-dark()`.** One token definition per
+- **`theme.css` (recommended): `light-dark()`.** One token definition per
   variable; `color-scheme: light dark` on `:root` drives the automatic branch
   when no class is present, and `.light`/`.dark` pin `color-scheme` for an
-  explicit choice. Active by default in the file.
-- **Strategy 2 (classic, commented out):** plain custom properties duplicated
-  under `.dark` and under `@media (prefers-color-scheme: dark)` scoped to
-  `:root:not(.light)`. Use only if you can't adopt `light-dark()` (older
-  target browsers, or tokens that aren't colors).
-- **Tailwind v4 dual `dark:` variant (commented out):** a `@custom-variant
-  dark` that makes `dark:` utilities respond to both the explicit `.dark`
-  class and the classless OS preference, compatible with either strategy
-  above.
+  explicit choice.
+- **`theme-classic.css`:** plain custom properties duplicated under `.dark`
+  and under `@media (prefers-color-scheme: dark)` scoped to
+  `:root:not(.light)`. Use it in place of `theme.css` for target browsers
+  without `light-dark()`, or for tokens that aren't colors.
+- **`theme-tailwind.css`:** a `@custom-variant dark` that makes `dark:`
+  utilities respond to both the explicit `.dark` class and the classless OS
+  preference. Put it in the file that has your `@import "tailwindcss";`. It
+  works with either file above.
+
+### Development
+
+```bash
+pnpm install
+pnpm exec playwright install chromium webkit
+pnpm check
+pnpm typecheck
+pnpm test
+```
+
+- `pnpm check` runs Biome, then `scripts/check-no-comments.ts`, which fails
+  on any comment in tracked TS, JS or CSS files. Put a reason in a name, a
+  test, `biome.json`, or this README instead.
+- `pnpm test` runs the node tests and the `*.browser.test.ts` files in
+  headless Chromium and WebKit through Vitest browser mode. The browser tests
+  emulate the OS colour scheme and reduced motion.
 
 ## 8. For AI agents
 
@@ -434,11 +515,13 @@ first.
 
 | File | Role |
 | --- | --- |
-| `src/theme-core.ts` | Pure logic: types, cookie parsing, the resolution ladder. No browser/server APIs — import this from both server and client code. |
-| `src/theme-server.ts` | `readTheme` (request → `ThemeInfo`) and `acceptCHHeaders` (native client-hint opt-in headers). Server-only. |
-| `src/theme-script.ts` | `getClientHintCheckScript` — builds the inline `<head>` script string. Runs in both server (to build the string) and browser (as the emitted script) contexts. |
+| `src/theme-core.ts` | Pure logic: types, cookie parsing, the resolution ladder (explicit cookie > `Sec-CH-Prefers-Color-Scheme` header > `"unknown"`). No browser/server APIs — import this from both server and client code. |
+| `src/theme-polyfill.ts` | `polyfillColorSchemeHint` — server half of the client-hint polyfill: copies the hint cookie into a fresh `Headers` as `sec-ch-prefers-color-scheme` when the browser did not send a valid one. The only server code that reads the hint cookie. Server-only. |
+| `src/theme-server.ts` | `readTheme` (request → `ThemeInfo`, runs the polyfill first) and `acceptCHHeaders` (native client-hint opt-in headers). Server-only. |
+| `src/theme-script.ts` | `getClientHintCheckScript` — client half of the polyfill: builds the inline `<head>` script string that writes the hint cookie. Runs in both server (to build the string) and browser (as the emitted script) contexts. |
 | `src/theme-client.ts` | `setTheme` and `subscribeToSystemSchemeChange` — browser-only DOM/cookie mutation, guarded to no-op under SSR. |
-| `src/theme.css` | Copy-paste CSS: token strategies + optional Tailwind variant. |
+| `src/theme.css`, `src/theme-classic.css`, `src/theme-tailwind.css` | Copy-paste CSS: the `light-dark()` strategy, the classic strategy, and the optional Tailwind variant. |
+| `scripts/check-no-comments.ts` | Part of `pnpm check`: fails on any comment in the repo's code. |
 | `examples/*.md` | Framework-specific wiring (TanStack Start, Next.js App Router, React Router v7 / Remix). |
 
 **Invariants that must never be violated when adapting this to a new
@@ -458,10 +541,18 @@ framework or app:**
    mismatch appears, the bug is upstream (something set a class or attribute
    the server didn't render) — fix that, don't suppress it.
 4. In `firstVisit: "css"` mode, the classless first paint depends on the CSS
-   in `theme.css` working correctly with **no class present at all**. When
+   in `theme.css` (or `theme-classic.css`) working correctly with **no class present at all**. When
    adapting the CSS (new tokens, a different strategy), verify the no-class
    case still resolves via `prefers-color-scheme` / `light-dark()` before
    shipping — that's the one case with no server or script backstop.
+5. Read the OS preference on the server only from the
+   `sec-ch-prefers-color-scheme` header (via `readTheme`, or after
+   `polyfillColorSchemeHint`). Do not read the hint cookie anywhere else on
+   the server: `theme-polyfill.ts` is the one place that knows it, so that
+   deleting it and `theme-script.ts` is the whole migration once WebKit and
+   Gecko ship the native hint.
+6. Write no comments in this repo's code: `pnpm check` fails on them. Put the
+   reason in a name, a test, `biome.json`, or the README.
 
 ## 9. Sources / prior art
 

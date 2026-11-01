@@ -73,7 +73,7 @@ describe("readTheme with a plain record", () => {
 		});
 	});
 
-	it("handles string[] header values (takes the first)", () => {
+	it("handles string[] header values", () => {
 		expect(readTheme({ cookie: ["theme=dark", "other=1"] })).toEqual({
 			explicit: "dark",
 			hint: null,
@@ -87,6 +87,32 @@ describe("readTheme with a plain record", () => {
 			readTheme({
 				cookie: "ch-prefers-color-scheme=light",
 				"sec-ch-prefers-color-scheme": "dark",
+			}),
+		).toEqual({
+			explicit: null,
+			hint: "dark",
+			mode: "system",
+			resolved: "dark",
+		});
+	});
+
+	it("reads a theme cookie from any entry of a string[] cookie", () => {
+		expect(readTheme({ cookie: ["other=1", "theme=dark"] })).toEqual({
+			explicit: "dark",
+			hint: null,
+			mode: "dark",
+			resolved: "dark",
+		});
+	});
+
+	it("reads Node HTTP/2 headers, which include pseudo-headers", () => {
+		expect(
+			readTheme({
+				":method": "GET",
+				":path": "/",
+				":authority": "example.test",
+				":scheme": "https",
+				cookie: "ch-prefers-color-scheme=dark",
 			}),
 		).toEqual({
 			explicit: null,
@@ -139,11 +165,33 @@ describe("readTheme with custom cookie names", () => {
 });
 
 describe("acceptCHHeaders", () => {
-	it("values every header with the scheme hint", () => {
+	it("asks for the scheme hint and varies on every input of readTheme", () => {
 		expect(acceptCHHeaders()).toEqual({
 			"Accept-CH": "Sec-CH-Prefers-Color-Scheme",
 			"Critical-CH": "Sec-CH-Prefers-Color-Scheme",
-			Vary: "Sec-CH-Prefers-Color-Scheme",
+			Vary: "Sec-CH-Prefers-Color-Scheme, Cookie",
 		});
+	});
+
+	it("gives a distinct cache key to requests that resolve differently", () => {
+		const varyNames = acceptCHHeaders()
+			.Vary.split(",")
+			.map((name) => name.trim().toLowerCase());
+		const cacheKey = (headers: Record<string, string>) =>
+			varyNames.map((name) => headers[name] ?? "").join("\n");
+		const requests: Record<string, string>[] = [
+			{},
+			{ cookie: "theme=dark" },
+			{ cookie: "ch-prefers-color-scheme=light" },
+			{ "sec-ch-prefers-color-scheme": "light" },
+			{ cookie: "theme=dark", "sec-ch-prefers-color-scheme": "light" },
+		];
+		const resolvedByKey = new Map<string, string>();
+		for (const headers of requests) {
+			const key = cacheKey(headers);
+			const { resolved } = readTheme(headers);
+			expect(resolvedByKey.get(key) ?? resolved).toBe(resolved);
+			resolvedByKey.set(key, resolved);
+		}
 	});
 });

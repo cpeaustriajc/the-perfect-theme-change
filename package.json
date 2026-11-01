@@ -7,12 +7,15 @@
 	"type": "module",
 	"private": true,
 	"scripts": {
-		"check": "biome check .",
+		"check": "biome check . && node scripts/check-no-comments.ts",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.2",
+		"@types/node": "^26.6.6",
+		"@vitest/browser-playwright": "^4.1.10",
+		"playwright": "^1.64.1",
 		"typescript": "^6.0.3",
 		"vitest": "^4.1.10"
 	}
